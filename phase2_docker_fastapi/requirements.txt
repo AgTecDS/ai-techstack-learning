@@ -1,0 +1,20 @@
+# FastAPI and ASGI server
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+
+# Data validation (FastAPI depends on this, but pinning ensures reproducibility)
+pydantic==2.7.1
+
+# Image handling
+Pillow==10.3.0
+
+# PyTorch CPU-only — smaller image size for serving
+# For GPU inference swap for: torch==2.3.0+cu121 --index-url https://download.pytorch.org/whl/cu121
+torch==2.3.0
+torchvision==0.18.0
+
+# HTTP client for the health check and testing
+httpx==0.27.0
+
+# Optional: structured logging
+python-multipart==0.0.9  # required by FastAPI for file upload (UploadFile)

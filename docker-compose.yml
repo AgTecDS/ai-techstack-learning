@@ -1,0 +1,134 @@
+version: "3.9"
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Full stack: PostgreSQL + Qdrant + MinIO + FastAPI model server + Streamlit UI
+#
+# Start everything:   docker compose up --build
+# Stop everything:    docker compose down
+# Wipe all data:      docker compose down -v
+# ══════════════════════════════════════════════════════════════════════════════
+
+networks:
+  ai-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  qdrant_data:
+  minio_data:
+
+services:
+
+  # ── PostgreSQL 16 ────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER:     postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB:       ailearning
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - ai-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Qdrant vector database ────────────────────────────────────────────────────
+  qdrant:
+    image: qdrant/qdrant:v1.9.2
+    container_name: qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"   # REST + dashboard at http://localhost:6333/dashboard
+      - "6334:6334"   # gRPC
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks:
+      - ai-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:6333/readyz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── MinIO object storage ───────────────────────────────────────────────────
+  minio:
+    image: minio/minio:RELEASE.2024-04-18T19-09-19Z
+    container_name: minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"   # S3-compatible API
+      - "9001:9001"   # Web UI at http://localhost:9001
+    environment:
+      MINIO_ROOT_USER:     minio
+      MINIO_ROOT_PASSWORD: minio123
+    volumes:
+      - minio_data:/data
+    networks:
+      - ai-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9000/minio/health/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── FastAPI model server (Phase 2) ────────────────────────────────────────────
+  # Uncomment once you have built the image: docker build -t mnist-api phase2_docker_fastapi/
+  # api:
+  #   image: mnist-api:latest
+  #   container_name: api
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8000:8000"
+  #   environment:
+  #     MODEL_CHECKPOINT: /app/models/mnist_cnn.pth
+  #   volumes:
+  #     - ./phase1_python_ml/mnist_cnn.pth:/app/models/mnist_cnn.pth:ro
+  #   networks:
+  #     - ai-net
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+  #     interval: 15s
+  #     timeout: 5s
+  #     retries: 5
+
+  # ── Streamlit capstone app (Phase 5) ──────────────────────────────────────────
+  # Uncomment once you have an ONNX model: python phase3_edge_ai/export_onnx.py
+  # streamlit:
+  #   build:
+  #     context: .
+  #     dockerfile: phase5_capstone/Dockerfile.streamlit
+  #   container_name: streamlit
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8501:8501"
+  #   environment:
+  #     ONNX_MODEL_PATH: /app/models/mnist_cnn.onnx
+  #     QDRANT_HOST:     qdrant
+  #     QDRANT_PORT:     "6333"
+  #     DATABASE_URL:    postgresql://postgres:postgres@postgres:5432/ailearning
+  #     S3_ENDPOINT:     http://minio:9000
+  #     S3_KEY:          minio
+  #     S3_SECRET:       minio123
+  #   volumes:
+  #     - ./phase3_edge_ai/mnist_cnn.onnx:/app/models/mnist_cnn.onnx:ro
+  #   depends_on:
+  #     qdrant:
+  #       condition: service_healthy
+  #     minio:
+  #       condition: service_healthy
+  #     postgres:
+  #       condition: service_healthy
+  #   networks:
+  #     - ai-net
